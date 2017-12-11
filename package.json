@@ -1,6 +1,6 @@
 {
   "name": "babel-plugin-matrix",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "a babel plugin",
   "main": "lib/plugin.js",
   "scripts": {
