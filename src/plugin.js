@@ -79,11 +79,12 @@ const checkShouldAppend = function(str) {
  */
 const buildEntryCode = template.smart(`
 import matrixLog from 'matrix-log';
-import { onBeforeAppStart, onBeforeMessageSend } from './matrixConfig';
+import { onBeforeAppStart, onBeforeMessageSend, endPointUrl } from './matrixConfig';
 global.matrixLog = matrixLog;
-global.matrixLog.setOnBeforeAppStart(onBeforeAppStart);
-global.matrixLog.setOnBeforeMessageSend(onBeforeMessageSend);
-global.matrixLog.appendLog('Matrixlog starts recording.');
+global.matrixLog && global.matrixLog.setEndPointUrl(endPointUrl)
+global.matrixLog && global.matrixLog.setOnBeforeAppStart(onBeforeAppStart);
+global.matrixLog && global.matrixLog.setOnBeforeMessageSend(onBeforeMessageSend);
+global.matrixLog && global.matrixLog.appendLog('Matrixlog starts recording.');
 `);
 
 /**
