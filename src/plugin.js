@@ -229,7 +229,7 @@ const traverseJSXExpressionContainer = function(jsxExPath, t, param) {
   const ast = template.expression(`
     (...params) => {
       const callbackWrapper=ORIGINAL_SOURCE;
-      global.matrixLog.appendLog(${jsonParam});
+      matrixLog && matrixLog.appendLog(${jsonParam});
       callbackWrapper && callbackWrapper(...params);
     }
     `)({
@@ -311,6 +311,7 @@ const traverseJSXElement = function(elementPath, t, fullFileName) {
 module.exports = function(babel) {
   const t = babel.types;
   let insertEntryCode = false;
+
   return {
     visitor: {
       // Traverse all programs and find the one that register component
