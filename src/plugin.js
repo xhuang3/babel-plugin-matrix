@@ -41,7 +41,7 @@ const routeNames = [
  * entry program is the one the contains AppRegistry.registerComponent()
  * which should be run at the beginning of app start
  */
-const isEntryProgram = function (statementPath) {
+const isEntryProgram = function(statementPath) {
   if (get(statementPath, ['node', 'expression', 'type']) !== 'CallExpression') {
     return false;
   }
@@ -59,9 +59,9 @@ const isEntryProgram = function (statementPath) {
 /**
  * Check if this event should be track
  */
-const checkShouldAppend = function (str) {
+const checkShouldAppend = function(str) {
   return str.match(
-    /on.*(press|Press|click|Click|change|Change|changeText|ChangeText|select|Select|cancel|Cancel|submit|Submit)/,
+    /on.*(press|Press|click|Click|change|Change|changeText|ChangeText|select|Select|cancel|Cancel|submit|Submit)/
   );
 };
 
@@ -78,12 +78,13 @@ const checkShouldAppend = function (str) {
  * 2) Should invoke user defined callback
  */
 const buildEntryCode = template.smart(`
-import { matrixLog } from 'babel-plugin-matrix';
-import { onBeforeAppStart, onBeforeMessageSend } from './matrixConfig';
-global.matrixLog = matrixLog.default;
-global.matrixLog.setOnBeforeAppStart(onBeforeAppStart);
-global.matrixLog.setOnBeforeMessageSend(onBeforeMessageSend);
-global.matrixLog.appendLog('Matrixlog starts recording.');
+import matrixLog from 'matrix-log';
+import { onBeforeAppStart, onBeforeMessageSend, endPointUrl } from './matrixConfig';
+global.matrixLog = matrixLog;
+global.matrixLog && global.matrixLog.setEndPointUrl(endPointUrl)
+global.matrixLog && global.matrixLog.setOnBeforeAppStart(onBeforeAppStart);
+global.matrixLog && global.matrixLog.setOnBeforeMessageSend(onBeforeMessageSend);
+global.matrixLog && global.matrixLog.appendLog('Matrixlog starts recording.');
 `);
 
 /**
@@ -91,7 +92,7 @@ global.matrixLog.appendLog('Matrixlog starts recording.');
  * @param {*} logString
  * @param {*} t
  */
-const buildLogger = function (param, t) {
+const buildLogger = function(param, t) {
   const jsonParam = JSON.stringify(param);
   return template.smart(`global.matrixLog.appendLog(${jsonParam});`)();
 };
@@ -108,11 +109,11 @@ const buildLogger = function (param, t) {
  * @param {*} path
  * @param {*} t
  */
-const addDidMountOrWillUnmountToClassWithLog = function (
+const addDidMountOrWillUnmountToClassWithLog = function(
   methodName,
   path,
   t,
-  fullFileName,
+  fullFileName
 ) {
   const body = [];
   const param = {
@@ -125,7 +126,7 @@ const addDidMountOrWillUnmountToClassWithLog = function (
     'method',
     t.Identifier(methodName),
     [],
-    t.BlockStatement(body),
+    t.BlockStatement(body)
   );
   path.get('body').unshiftContainer('body', ast);
 };
@@ -135,11 +136,11 @@ const addDidMountOrWillUnmountToClassWithLog = function (
  * @param {*} methodPath
  * @param {*} t
  */
-const appendLogToClassMethod = function (
+const appendLogToClassMethod = function(
   methodName,
   methodPath,
   t,
-  fullFileName,
+  fullFileName
 ) {
   const param = {
     fullFileName,
@@ -161,7 +162,7 @@ const appendLogToClassMethod = function (
  * @param {*} classPath
  * @param {*} t
  */
-const traverseClassDeclaration = function (classPath, t, fullFileName) {
+const traverseClassDeclaration = function(classPath, t, fullFileName) {
   const superClassName =
     get(classPath, ['node', 'superClass', 'name']) ||
     get(classPath, ['node', 'superClass', 'property', 'name']);
@@ -202,7 +203,7 @@ const traverseClassDeclaration = function (classPath, t, fullFileName) {
       methodName,
       classPath,
       t,
-      fullFileName,
+      fullFileName
     );
   }
 
@@ -212,7 +213,7 @@ const traverseClassDeclaration = function (classPath, t, fullFileName) {
       methodName,
       classPath,
       t,
-      fullFileName,
+      fullFileName
     );
   }
 };
@@ -222,18 +223,18 @@ const traverseClassDeclaration = function (classPath, t, fullFileName) {
  * @param {*} jsxExPath
  * @param {*} t
  */
-const traverseJSXExpressionContainer = function (jsxExPath, t, param) {
+const traverseJSXExpressionContainer = function(jsxExPath, t, param) {
   if (jsxExPath.node.isClean) return;
   const jsonParam = JSON.stringify(param);
   const ast = template.expression(`
     (...params) => {
       const callbackWrapper=ORIGINAL_SOURCE;
-      global.matrixLog.appendLog(${jsonParam});
+      matrixLog && matrixLog.appendLog(${jsonParam});
       callbackWrapper && callbackWrapper(...params);
     }
     `)({
-      ORIGINAL_SOURCE: jsxExPath.node.expression,
-    });
+    ORIGINAL_SOURCE: jsxExPath.node.expression,
+  });
 
   jsxExPath.replaceWith(t.JSXExpressionContainer(ast));
   jsxExPath.node.isClean = true;
@@ -245,7 +246,7 @@ const traverseJSXExpressionContainer = function (jsxExPath, t, param) {
  * @param {*} t
  * @param {*} fullFileName
  */
-const traverseJSXElement = function (elementPath, t, fullFileName) {
+const traverseJSXElement = function(elementPath, t, fullFileName) {
   let needAppend = false;
   elementPath.traverse({
     JSXAttribute(attPath) {
@@ -264,7 +265,7 @@ const traverseJSXElement = function (elementPath, t, fullFileName) {
   const elementType = get(
     elementPath,
     ['node', 'openingElement', 'name', 'name'],
-    '',
+    ''
   );
 
   let text = '';
@@ -307,9 +308,10 @@ const traverseJSXElement = function (elementPath, t, fullFileName) {
 /**
  * 1) check if entry program, if it is, add the code snippet
  */
-module.exports = function (babel) {
+module.exports = function(babel) {
   const t = babel.types;
   let insertEntryCode = false;
+
   return {
     visitor: {
       // Traverse all programs and find the one that register component
@@ -352,11 +354,3 @@ module.exports = function (babel) {
     },
   };
 };
-
-/**
- * ============================================================================
- * Export matrix log
- * ============================================================================
- */
-
-module.exports.matrixLog = require('./matrixLog');
