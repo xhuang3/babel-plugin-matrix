@@ -1,34 +1,5 @@
-const template = require('@babel/template');
-const get = require('lodash/get');
-
-// todo
-const routeNames = [
-  'LeftSideMenuContainer',
-  'HomeContainer',
-  // =====
-  'InitializeScreen',
-  'Test',
-  'UserProtocol',
-  'RefundSuccessContainer',
-  'ConsumeRecordContainer',
-  'SwiperContainer',
-  'LoginInputTel',
-  'LoginCheckVCode',
-  'Certification',
-  'UserInfoContainer',
-  'Deposit',
-  'DrawerContainer',
-  'ScanQRCodeScreen',
-  'POISearchScreen',
-  'ManualInputScreen',
-  'WebViewPageScreen',
-  'WebViewScan',
-  'WalletContainer',
-  'TopUpContainer',
-  'TopUpProtocolContainer',
-  'TripDetailContainer',
-  'EventTrackerContainer',
-];
+import { get } from 'lodash';
+import template from '@babel/template';
 
 /**
  * ============================================================================
@@ -61,7 +32,7 @@ const isEntryProgram = function(statementPath) {
  */
 const checkShouldAppend = function(str) {
   return str.match(
-    /on.*(press|Press|click|Click|change|Change|changeText|ChangeText|select|Select|cancel|Cancel|submit|Submit)/
+    /\bon[a-zA-Z]*([Pp]ress|[Cc]lick|[Cc]hange|[Cc]hangeText|[Ss]elect|[Cc]ancel|[Ss]ubmit)\b/
   );
 };
 
@@ -78,10 +49,10 @@ const checkShouldAppend = function(str) {
  * 2) Should invoke user defined callback
  */
 const buildEntryCode = template.smart(`
-import matrixLog from 'matrix-log';
+import matrixLog from 'babel-plugin-matrix/matrixLog';
 import { onBeforeAppStart, onBeforeMessageSend, endPointUrl } from './matrixConfig';
 global.matrixLog = matrixLog;
-global.matrixLog && global.matrixLog.setEndPointUrl(endPointUrl)
+global.matrixLog && global.matrixLog.setEndPointUrl(endPointUrl);
 global.matrixLog && global.matrixLog.setOnBeforeAppStart(onBeforeAppStart);
 global.matrixLog && global.matrixLog.setOnBeforeMessageSend(onBeforeMessageSend);
 global.matrixLog && global.matrixLog.appendLog('Matrixlog starts recording.');
@@ -92,9 +63,9 @@ global.matrixLog && global.matrixLog.appendLog('Matrixlog starts recording.');
  * @param {*} logString
  * @param {*} t
  */
-const buildLogger = function(param, t) {
-  const jsonParam = JSON.stringify(param);
-  return template.smart(`global.matrixLog.appendLog(${jsonParam});`)();
+const buildLogger = function(params) {
+  const jsonParams = JSON.stringify(params);
+  return template.smart(`global.matrixLog.appendLog(${jsonParams});`)();
 };
 
 /**
@@ -112,21 +83,21 @@ const buildLogger = function(param, t) {
 const addDidMountOrWillUnmountToClassWithLog = function(
   methodName,
   path,
-  t,
-  fullFileName
+  fullFileName,
+  types
 ) {
   const body = [];
-  const param = {
+  const params = {
     fullFileName,
     elementType: 'function',
     nodeName: methodName,
   };
-  body.push(buildLogger(param, t));
-  const ast = t.ClassMethod(
+  body.push(buildLogger(params));
+  const ast = types.ClassMethod(
     'method',
-    t.Identifier(methodName),
+    types.Identifier(methodName),
     [],
-    t.BlockStatement(body)
+    types.BlockStatement(body)
   );
   path.get('body').unshiftContainer('body', ast);
 };
@@ -136,18 +107,13 @@ const addDidMountOrWillUnmountToClassWithLog = function(
  * @param {*} methodPath
  * @param {*} t
  */
-const appendLogToClassMethod = function(
-  methodName,
-  methodPath,
-  t,
-  fullFileName
-) {
-  const param = {
+const appendLogToClassMethod = function(methodName, methodPath, fullFileName) {
+  const params = {
     fullFileName,
     elementType: 'function',
     nodeName: methodName,
   };
-  const ast = buildLogger(param, t);
+  const ast = buildLogger(params);
   methodPath.get('body').pushContainer('body', ast);
 };
 
@@ -162,15 +128,13 @@ const appendLogToClassMethod = function(
  * @param {*} classPath
  * @param {*} t
  */
-const traverseClassDeclaration = function(classPath, t, fullFileName) {
+const traverseClassDeclaration = function(classPath, fullFileName, types) {
   const superClassName =
     get(classPath, ['node', 'superClass', 'name']) ||
     get(classPath, ['node', 'superClass', 'property', 'name']);
   if (superClassName !== 'Component' && superClassName !== 'PureComponent') {
     return;
   }
-
-  if (routeNames.indexOf(get(classPath, ['node', 'id', 'name'])) === -1) return;
 
   let hasComponentDidMount = false;
   let hasComponentWillUnmount = false;
@@ -190,7 +154,7 @@ const traverseClassDeclaration = function(classPath, t, fullFileName) {
       }
 
       if (isDidMountOrWillUnmount) {
-        appendLogToClassMethod(methodName, methodPath, t, fullFileName);
+        appendLogToClassMethod(methodName, methodPath, fullFileName);
       }
     },
   });
@@ -202,8 +166,8 @@ const traverseClassDeclaration = function(classPath, t, fullFileName) {
     addDidMountOrWillUnmountToClassWithLog(
       methodName,
       classPath,
-      t,
-      fullFileName
+      fullFileName,
+      types
     );
   }
 
@@ -212,8 +176,8 @@ const traverseClassDeclaration = function(classPath, t, fullFileName) {
     addDidMountOrWillUnmountToClassWithLog(
       methodName,
       classPath,
-      t,
-      fullFileName
+      fullFileName,
+      types
     );
   }
 };
@@ -223,20 +187,20 @@ const traverseClassDeclaration = function(classPath, t, fullFileName) {
  * @param {*} jsxExPath
  * @param {*} t
  */
-const traverseJSXExpressionContainer = function(jsxExPath, t, param) {
+const traverseJSXExpressionContainer = function(jsxExPath, params, types) {
   if (jsxExPath.node.isClean) return;
-  const jsonParam = JSON.stringify(param);
+  const jsonParams = JSON.stringify(params);
   const ast = template.expression(`
     (...params) => {
       const callbackWrapper=ORIGINAL_SOURCE;
-      matrixLog && matrixLog.appendLog(${jsonParam});
+      matrixLog && matrixLog.appendLog(${jsonParams});
       callbackWrapper && callbackWrapper(...params);
     }
     `)({
     ORIGINAL_SOURCE: jsxExPath.node.expression,
   });
 
-  jsxExPath.replaceWith(t.JSXExpressionContainer(ast));
+  jsxExPath.replaceWith(types.JSXExpressionContainer(ast));
   jsxExPath.node.isClean = true;
 };
 
@@ -246,7 +210,7 @@ const traverseJSXExpressionContainer = function(jsxExPath, t, param) {
  * @param {*} t
  * @param {*} fullFileName
  */
-const traverseJSXElement = function(elementPath, t, fullFileName) {
+const traverseJSXElement = function(elementPath, fullFileName, types) {
   let needAppend = false;
   elementPath.traverse({
     JSXAttribute(attPath) {
@@ -283,7 +247,7 @@ const traverseJSXElement = function(elementPath, t, fullFileName) {
       const nodeName = get(attPath, ['node', 'name', 'name']);
 
       text = text.replace(/(\n|\r|\s)/g, '');
-      const param = {
+      const params = {
         fullFileName,
         elementType,
         nodeName,
@@ -291,7 +255,7 @@ const traverseJSXElement = function(elementPath, t, fullFileName) {
       };
       attPath.traverse({
         JSXExpressionContainer(jsxExPath) {
-          traverseJSXExpressionContainer(jsxExPath, t, param);
+          traverseJSXExpressionContainer(jsxExPath, params, types);
         },
       });
       attPath.node.isClean = true;
@@ -309,9 +273,8 @@ const traverseJSXElement = function(elementPath, t, fullFileName) {
  * 1) check if entry program, if it is, add the code snippet
  */
 module.exports = function(babel) {
-  const t = babel.types;
   let insertEntryCode = false;
-
+  const types = babel.types;
   return {
     visitor: {
       // Traverse all programs and find the one that register component
@@ -322,13 +285,13 @@ module.exports = function(babel) {
 
         path.traverse({
           ClassExpression(classPath) {
-            traverseClassDeclaration(classPath, t, fullFileName);
+            traverseClassDeclaration(classPath, fullFileName, types);
           },
 
           // Then traverse all jsx attributes
           // Wrap onPress
           JSXElement(elementPath) {
-            traverseJSXElement(elementPath, t, fullFileName);
+            traverseJSXElement(elementPath, fullFileName, types);
           },
         });
 
