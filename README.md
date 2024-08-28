@@ -5,7 +5,7 @@
 1. **Installation**:  
    Run the following command to install the plugin:
    ```bash
-   npm install --save git+ssh://git@ofordcode.ofo.so:b2b-frontend/babel-plugin-matrix.git
+   npm install --save 
    ```
 
 2. **Configuration**:  
@@ -62,7 +62,7 @@
 1. **安装**:  
    运行以下命令安装该插件：
    ```bash
-   npm install --save git+ssh://git@ofordcode.ofo.so:b2b-frontend/babel-plugin-matrix.git
+   npm install --save 
    ```
 
 2. **配置**:  
