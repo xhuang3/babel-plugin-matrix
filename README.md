@@ -1,4 +1,3 @@
-### git地址：git@ofordcode.ofo.so:b2b-frontend/babel-plugin-matrix.git
 #### babel-plugin-matrix是一个基于Babel实现的自动化埋点
 #### 使用方法：
 * npm install --save git+ssh://git@ofordcode.ofo.so:b2b-frontend/babel-plugin-matrix.git
@@ -33,4 +32,3 @@ export const endPointUrl = '';
     2. 找到所有事件的触发入口（onPress/onClick/onSelect etc.），并修改入口代码调用global里注入的自定义代码
     3. 找到所有组件的constructor,componentWillMount,componentWillUnmount,添加自定义代码调用global里注入的代码
 * 因为在未来版本RN里（>0.54），componentWillMount或被deprecate，所以可能导致这个库失效。
-* 有问题找黄星博: huangxingbo-yx@ofo.com
