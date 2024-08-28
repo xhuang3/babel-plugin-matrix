@@ -3,256 +3,171 @@ import template from '@babel/template';
 
 /**
  * ============================================================================
- * Check condition
+ * Utility Functions
  * ============================================================================
  */
 
 /**
- * Check if the program is an entry program
- * entry program is the one the contains AppRegistry.registerComponent()
- * which should be run at the beginning of app start
+ * Check if the program is an entry program.
+ * An entry program contains AppRegistry.registerComponent() which should be run at app start.
  */
-const isEntryProgram = function(statementPath) {
-  if (get(statementPath, ['node', 'expression', 'type']) !== 'CallExpression') {
-    return false;
-  }
+const isEntryProgram = (statementPath) => {
+  const expressionType = get(statementPath, ['node', 'expression', 'type']);
+  if (expressionType !== 'CallExpression') return false;
 
   const callee = get(statementPath, ['node', 'expression', 'callee']);
-  if (
+  return (
     callee.type === 'MemberExpression' &&
     callee.object.name === 'AppRegistry' &&
     callee.property.name === 'registerComponent'
-  ) {
-    return true;
-  }
-};
-
-/**
- * Check if this event should be track
- */
-const checkShouldAppend = function(str) {
-  return str.match(
-    /\bon[a-zA-Z]*([Pp]ress|[Cc]lick|[Cc]hange|[Cc]hangeText|[Ss]elect|[Cc]ancel|[Ss]ubmit)\b/
   );
 };
 
 /**
+ * Check if the event should be tracked based on naming conventions.
+ */
+const shouldTrackEvent = (str) => 
+  /\bon[a-zA-Z]*([Pp]ress|[Cc]lick|[Cc]hange|[Cc]hangeText|[Ss]elect|[Cc]ancel|[Ss]ubmit)\b/.test(str);
+
+/**
  * ============================================================================
- * Building Code
+ * Code Generation
  * ============================================================================
  */
 
 /**
- * Build code snippet
- * Should do three things:
- * 1) Init global log with request url, time interval, etc.
- * 2) Should invoke user defined callback
+ * Generate the entry code snippet for initializing global logging.
  */
-const buildEntryCode = template.smart(`
+const generateEntryCode = template.smart(`
 import matrixLog from 'babel-plugin-matrix/matrixLog';
 import { onBeforeAppStart, onBeforeMessageSend, endPointUrl } from './matrixConfig';
 global.matrixLog = matrixLog;
-global.matrixLog && global.matrixLog.setEndPointUrl(endPointUrl);
-global.matrixLog && global.matrixLog.setOnBeforeAppStart(onBeforeAppStart);
-global.matrixLog && global.matrixLog.setOnBeforeMessageSend(onBeforeMessageSend);
-global.matrixLog && global.matrixLog.appendLog('Matrixlog starts recording.');
+global.matrixLog?.setEndPointUrl(endPointUrl);
+global.matrixLog?.setOnBeforeAppStart(onBeforeAppStart);
+global.matrixLog?.setOnBeforeMessageSend(onBeforeMessageSend);
+global.matrixLog?.appendLog('Matrixlog starts recording.');
 `);
 
 /**
- *
- * @param {*} logString
- * @param {*} t
+ * Generate a logging statement with the provided parameters.
  */
-const buildLogger = function(params) {
-  const jsonParams = JSON.stringify(params);
-  return template.smart(`global.matrixLog.appendLog(${jsonParams});`)();
-};
+const generateLogStatement = (params) => 
+  template.smart(`global.matrixLog.appendLog(${JSON.stringify(params)});`)();
 
 /**
  * ============================================================================
- * Append code
+ * AST Manipulation
  * ============================================================================
  */
 
 /**
- *
- * @param {*} methodName
- * @param {*} path
- * @param {*} t
+ * Add component lifecycle methods (if missing) and append logging statements.
  */
-const addDidMountOrWillUnmountToClassWithLog = function(
-  methodName,
-  path,
-  fullFileName,
-  types
-) {
-  const body = [];
-  const params = {
-    fullFileName,
-    elementType: 'function',
-    nodeName: methodName,
-  };
-  body.push(buildLogger(params));
-  const ast = types.ClassMethod(
+const addLifecycleMethodsWithLogging = (methodName, classPath, fullFileName, types) => {
+  const params = { fullFileName, elementType: 'function', nodeName: methodName };
+  const logStatement = generateLogStatement(params);
+
+  const method = types.classMethod(
     'method',
-    types.Identifier(methodName),
+    types.identifier(methodName),
     [],
-    types.BlockStatement(body)
+    types.blockStatement([logStatement])
   );
-  path.get('body').unshiftContainer('body', ast);
+  classPath.get('body').unshiftContainer('body', method);
 };
 
 /**
- *
- * @param {*} methodPath
- * @param {*} t
+ * Append a logging statement to the specified class method.
  */
-const appendLogToClassMethod = function(methodName, methodPath, fullFileName) {
-  const params = {
-    fullFileName,
-    elementType: 'function',
-    nodeName: methodName,
-  };
-  const ast = buildLogger(params);
-  methodPath.get('body').pushContainer('body', ast);
+const appendLogToMethod = (methodName, methodPath, fullFileName) => {
+  const params = { fullFileName, elementType: 'function', nodeName: methodName };
+  const logStatement = generateLogStatement(params);
+  methodPath.get('body').pushContainer('body', logStatement);
 };
 
 /**
- * ============================================================================
- * Traverse Node
- * ============================================================================
+ * Traverse class declarations and append logging to lifecycle methods.
  */
-
-/**
- *
- * @param {*} classPath
- * @param {*} t
- */
-const traverseClassDeclaration = function(classPath, fullFileName, types) {
-  const superClassName =
-    get(classPath, ['node', 'superClass', 'name']) ||
-    get(classPath, ['node', 'superClass', 'property', 'name']);
-  if (superClassName !== 'Component' && superClassName !== 'PureComponent') {
-    return;
-  }
+const traverseClassDeclaration = (classPath, fullFileName, types) => {
+  const superClassName = get(classPath, ['node', 'superClass', 'name']) || get(classPath, ['node', 'superClass', 'property', 'name']);
+  if (!['Component', 'PureComponent'].includes(superClassName)) return;
 
   let hasComponentDidMount = false;
   let hasComponentWillUnmount = false;
 
   classPath.traverse({
-    // Traverse class methods to find
-    ClassMethod: function ClassMethod(methodPath) {
+    ClassMethod(methodPath) {
       const methodName = get(methodPath, ['node', 'key', 'name']);
-      let isDidMountOrWillUnmount = false;
       if (methodName === 'componentDidMount') {
         hasComponentDidMount = true;
-        isDidMountOrWillUnmount = true;
+        appendLogToMethod(methodName, methodPath, fullFileName);
       }
       if (methodName === 'componentWillUnmount') {
         hasComponentWillUnmount = true;
-        isDidMountOrWillUnmount = true;
-      }
-
-      if (isDidMountOrWillUnmount) {
-        appendLogToClassMethod(methodName, methodPath, fullFileName);
+        appendLogToMethod(methodName, methodPath, fullFileName);
       }
     },
   });
 
-  // If this class does not implement componentDidMount/componentWillUnmount
-  // Insert these methods
   if (!hasComponentDidMount) {
-    const methodName = 'componentDidMount';
-    addDidMountOrWillUnmountToClassWithLog(
-      methodName,
-      classPath,
-      fullFileName,
-      types
-    );
+    addLifecycleMethodsWithLogging('componentDidMount', classPath, fullFileName, types);
   }
-
   if (!hasComponentWillUnmount) {
-    const methodName = 'componentWillUnmount';
-    addDidMountOrWillUnmountToClassWithLog(
-      methodName,
-      classPath,
-      fullFileName,
-      types
-    );
+    addLifecycleMethodsWithLogging('componentWillUnmount', classPath, fullFileName, types);
   }
 };
 
 /**
- *
- * @param {*} jsxExPath
- * @param {*} t
+ * Traverse and modify JSX expression containers to wrap callbacks with logging.
  */
-const traverseJSXExpressionContainer = function(jsxExPath, params, types) {
+const traverseJSXExpressionContainer = (jsxExPath, params, types) => {
   if (jsxExPath.node.isClean) return;
-  const jsonParams = JSON.stringify(params);
-  const ast = template.expression(`
-    (...params) => {
-      const callbackWrapper=ORIGINAL_SOURCE;
-      matrixLog && matrixLog.appendLog(${jsonParams});
-      callbackWrapper && callbackWrapper(...params);
-    }
-    `)({
-    ORIGINAL_SOURCE: jsxExPath.node.expression,
-  });
 
-  jsxExPath.replaceWith(types.JSXExpressionContainer(ast));
+  const callbackWrapper = template.expression(`
+    (...params) => {
+      const originalCallback = ORIGINAL_SOURCE;
+      matrixLog?.appendLog(${JSON.stringify(params)});
+      originalCallback?.(...params);
+    }
+  `)({ ORIGINAL_SOURCE: jsxExPath.node.expression });
+
+  jsxExPath.replaceWith(types.jsxExpressionContainer(callbackWrapper));
   jsxExPath.node.isClean = true;
 };
 
 /**
- *
- * @param {*} elementPath
- * @param {*} t
- * @param {*} fullFileName
+ * Traverse JSX elements to identify and modify attributes that require logging.
  */
-const traverseJSXElement = function(elementPath, fullFileName, types) {
-  let needAppend = false;
+const traverseJSXElement = (elementPath, fullFileName, types) => {
+  let shouldLog = false;
+
   elementPath.traverse({
     JSXAttribute(attPath) {
-      if (attPath.node.shouldAppendLog) return;
-
-      const nodeName = get(attPath, ['node', 'name', 'name']);
-      if (checkShouldAppend(nodeName)) {
-        // if (attributesNeedCheck.indexOf(nodeName) !== -1) {
+      const attributeName = get(attPath, ['node', 'name', 'name']);
+      if (shouldTrackEvent(attributeName)) {
         attPath.node.shouldAppendLog = true;
-        needAppend = true;
+        shouldLog = true;
       }
     },
   });
 
-  if (!needAppend) return;
-  const elementType = get(
-    elementPath,
-    ['node', 'openingElement', 'name', 'name'],
-    ''
-  );
+  if (!shouldLog) return;
 
-  let text = '';
+  const elementType = get(elementPath, ['node', 'openingElement', 'name', 'name'], '');
+  let textContent = '';
+  
   elementPath.traverse({
     JSXText(textPath) {
-      text += get(textPath, ['node', 'value'], '');
+      textContent += get(textPath, ['node', 'value'], '');
     },
   });
 
   elementPath.traverse({
     JSXAttribute(attPath) {
-      if (!attPath.node.shouldAppendLog) return;
-      if (attPath.node.isClean) return;
+      if (!attPath.node.shouldAppendLog || attPath.node.isClean) return;
 
       const nodeName = get(attPath, ['node', 'name', 'name']);
-
-      text = text.replace(/(\n|\r|\s)/g, '');
-      const params = {
-        fullFileName,
-        elementType,
-        nodeName,
-        text,
-      };
+      const params = { fullFileName, elementType, nodeName, text: textContent.trim() };
       attPath.traverse({
         JSXExpressionContainer(jsxExPath) {
           traverseJSXExpressionContainer(jsxExPath, params, types);
@@ -265,54 +180,39 @@ const traverseJSXElement = function(elementPath, fullFileName, types) {
 
 /**
  * ============================================================================
- * Export plugin
+ * Export Plugin
  * ============================================================================
  */
 
-/**
- * 1) check if entry program, if it is, add the code snippet
- */
 module.exports = function(babel) {
-  let insertEntryCode = false;
   const types = babel.types;
+  let entryCodeInserted = false;
+
   return {
     visitor: {
-      // Traverse all programs and find the one that register component
-      // Must register component in this form: AppRegistry.registerComponent()
       Program(path) {
-        // Workaround
         const fullFileName = get(path, ['hub', 'file', 'opts', 'filename'], '');
 
         path.traverse({
           ClassExpression(classPath) {
             traverseClassDeclaration(classPath, fullFileName, types);
           },
-
-          // Then traverse all jsx attributes
-          // Wrap onPress
           JSXElement(elementPath) {
             traverseJSXElement(elementPath, fullFileName, types);
           },
         });
 
-        // If entry has been inserted, no need to visit more programs
-        if (insertEntryCode) return;
+        if (entryCodeInserted) return;
 
-        // Traverse the program to see if this is a entry program
-        // entry program means the program that registers component
-        let entryProgram = false;
         path.traverse({
           ExpressionStatement(statementPath) {
-            if (entryProgram) return;
-            entryProgram = isEntryProgram(statementPath);
+            if (isEntryProgram(statementPath)) {
+              const entryCode = generateEntryCode();
+              path.unshiftContainer('body', entryCode);
+              entryCodeInserted = true;
+            }
           },
         });
-
-        if (entryProgram && !insertEntryCode) {
-          const ast = buildEntryCode();
-          path.unshiftContainer('body', ast);
-          insertEntryCode = true;
-        }
       },
     },
   };
